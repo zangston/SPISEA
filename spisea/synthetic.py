@@ -140,8 +140,8 @@ class ResolvedCluster(Cluster):
         ##### 
         # Sample the IMF to build up our cluster mass.
         #####
-        mass, isMulti, compMass, sysMass = imf.generate_cluster(cluster_mass,
-                                                                    seed=seed)
+        ##jpf: converted to function so it can be redefined by inherent classes
+        mass, isMulti, compMass, sysMass = self._generate_cluster_members() 
 
         # Figure out the filters we will make.
         self.filt_names = self.set_filter_names()
@@ -168,7 +168,8 @@ class ResolvedCluster(Cluster):
         ##### 
         # Make a table to contain all the information about companions.
         #####
-        if self.imf.make_multiples:
+        #jpf: self.imf migth be None if an inherent class do not use it
+        if self.imf is not None and self.imf.make_multiples:
             companions = self._make_companions_table(star_systems, compMass)
             
         #####
@@ -176,10 +177,25 @@ class ResolvedCluster(Cluster):
         #####
         self.star_systems = star_systems
         
-        if self.imf.make_multiples:
+        #jpf: same as above
+        if self.imf is not None and self.imf.make_multiples:
             self.companions = companions
 
         return
+    
+    def _generate_cluster_members(self):
+        """
+        Generate the essential column members for ResolveCluster object to work.
+        This function migth be redefined by inherent classes for additional flexibility.
+        
+        Output must be:
+        
+        mass, isMulti, compMass, sysMass
+        
+        """
+        mass, isMulti, compMass, sysMass = self.imf.generate_cluster(self.cluster_mass,
+                                                                        seed=self.seed)
+        return mass, isMulti, compMass, sysMass
 
     def set_filter_names(self):
         """
@@ -463,9 +479,12 @@ class ResolvedCluster(Cluster):
         star_systems = star_systems[idx]
         N_systems = len(star_systems)
 
-        if self.imf.make_multiples:
+        #if self.imf.make_multiples:
             # Clean up companion stuff (which we haven't handled yet)
-            compMass = [compMass[ii] for ii in idx]
+        #jpf : shouldnt this allways be done?
+        #   : how is compMass if self.imf.make_multiples is False? index error?
+        #   : imf.make_multiples is not defined in CustomResolvedCluster
+        compMass = [compMass[ii] for ii in idx]
         
         return star_systems, compMass
 
@@ -560,6 +579,20 @@ class ResolvedClusterDiffRedden(ResolvedCluster):
         #print 'Diff redden: {0}'.format(t2 - t1)
         return
     
+class CustomResolvedCluster(ResolvedCluster):
+    def __init__(self,star_cluster_table, iso, ifmr=None, verbose=True,
+                     seed=None):
+        self.custom_table = star_cluster_table
+        ResolvedCluster.__init__(self,iso,None,cluster_mass=star_cluster_table['systemMass'].sum()
+                                ,verbose=verbose)
+        
+    def _generate_cluster_members(self):
+        mass = self.custom_table['mass']
+        isMulti = self.custom_table['isMultiple']
+        compMass = self.custom_table['compMass']
+        sysMass = self.custom_table['systemMass']
+        return mass, isMulti, compMass, sysMass
+
 class UnresolvedCluster(Cluster):
     """
     Cluster sub-class that produces an *unresolved* stellar cluster.
