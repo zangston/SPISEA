@@ -137,11 +137,6 @@ class ResolvedCluster(Cluster):
             print('WARNING: random seed set to %i' % seed)
 
         t1 = time.time()
-        ##### 
-        # Sample the IMF to build up our cluster mass.
-        #####
-        ##jpf: converted to function so it can be redefined by inherent classes
-        mass, isMulti, compMass, sysMass = self._generate_cluster_members() 
 
         # Figure out the filters we will make.
         self.filt_names = self.set_filter_names()
@@ -156,6 +151,18 @@ class ResolvedCluster(Cluster):
             self.iso_interps[ikey] = interpolate.interp1d(self.iso.points['mass'], self.iso.points[ikey],
                                                           kind='linear', bounds_error=False, fill_value=np.nan)
         
+        # Converted to function, so that inherent classes had more flexibility
+        self._setup_systems_table()
+
+        return
+
+    def _setup_systems_table(self):
+        ##### 
+        # Sample the IMF to build up our cluster mass.
+        #####
+        ##jpf: converted to function so it can be redefined by inherent classes
+        mass, isMulti, compMass, sysMass = self._generate_cluster_members() 
+
         ##### 
         # Make a table to contain all the information about each stellar system.
         #####
@@ -168,8 +175,7 @@ class ResolvedCluster(Cluster):
         ##### 
         # Make a table to contain all the information about companions.
         #####
-        #jpf: self.imf migth be None if an inherent class do not use it
-        if self.imf is not None and self.imf.make_multiples:
+        if self.imf.make_multiples:
             companions = self._make_companions_table(star_systems, compMass)
             
         #####
@@ -177,16 +183,14 @@ class ResolvedCluster(Cluster):
         #####
         self.star_systems = star_systems
         
-        #jpf: same as above
-        if self.imf is not None and self.imf.make_multiples:
+        if self.imf.make_multiples:
             self.companions = companions
-
         return
     
     def _generate_cluster_members(self):
         """
         Generate the essential column members for ResolveCluster object to work.
-        This function migth be redefined by inherent classes for additional flexibility.
+        This function might be redefined by inherent classes for additional flexibility.
         
         Output must be:
         
@@ -294,9 +298,7 @@ class ResolvedCluster(Cluster):
         return star_systems
         
     def _make_companions_table(self, star_systems, compMass):
-
         N_systems = len(star_systems)
-        
         #####
         #    MULTIPLICITY                 
         # Make a second table containing all the companion-star masses.
@@ -304,7 +306,7 @@ class ResolvedCluster(Cluster):
         #    sysIndex - the index of the system this star belongs too
         #    mass - the mass of this individual star.
         N_companions = np.array([len(star_masses) for star_masses in compMass])
-        star_systems.add_column( Column(N_companions, name='N_companions') )
+        star_systems.add_column( Column(N_companions, name = 'N_companions') )
 
         N_comp_tot = N_companions.sum()
         system_index = np.repeat(np.arange(N_systems), N_companions)
@@ -335,6 +337,23 @@ class ResolvedCluster(Cluster):
             
             companions['e'] = self.imf._multi_props.random_e(np.random.rand(N_comp_tot))
             companions['i'], companions['Omega'], companions['omega'] = self.imf._multi_props.random_keplarian_parameters(np.random.rand(N_comp_tot),np.random.rand(N_comp_tot),np.random.rand(N_comp_tot))
+
+        if self.imf._multi_props == 'table' :
+            companions.add_column( Column(np.zeros(N_comp_tot, dtype=float), name='log_a') )
+            companions.add_column( Column(np.zeros(N_comp_tot, dtype=float), name='e') )
+            companions.add_column( Column(np.zeros(N_comp_tot, dtype=float), name='i', description = 'degrees') )
+            companions.add_column( Column(np.zeros(N_comp_tot, dtype=float), name='Omega') )
+            companions.add_column( Column(np.zeros(N_comp_tot, dtype=float), name='omega') )
+
+            for ii in range(len(companions)):
+                #companions['log_a'][ii] = self.imf._multi_props.log_semimajoraxis(companions['system_idx'][ii])
+                ind = companions['system_idx'][ii]
+                ncomp = star_systems['N_companions'][ii]
+                companions['log_a'][ii:ii+ncomp] = star_systems['log_a'][ind]
+                companions['e'][ii:ii+ncomp] = star_systems['e'][ind] 
+                #companions['i'][ii:ii+ncomp] = star_systems['i'][ind] 
+                #companions['Omega'][ii:ii+ncomp] = star_systems['Omega'][ind] 
+                #companions['omega'][ii:ii+ncomp] = star_systems['omega'][ind] 
 
 
         # Make an array that maps system index (ii), companion index (cc) to
@@ -449,7 +468,6 @@ class ResolvedCluster(Cluster):
         assert companions['mass'][idx].min() > 0
 
         return companions
-
     
     def _remove_bad_systems(self, star_systems, compMass):
         """
@@ -479,12 +497,12 @@ class ResolvedCluster(Cluster):
         star_systems = star_systems[idx]
         N_systems = len(star_systems)
 
-        #if self.imf.make_multiples:
+        if self.imf.make_multiples:
             # Clean up companion stuff (which we haven't handled yet)
         #jpf : shouldnt this allways be done?
         #   : how is compMass if self.imf.make_multiples is False? index error?
         #   : imf.make_multiples is not defined in CustomResolvedCluster
-        compMass = [compMass[ii] for ii in idx]
+            compMass = [compMass[ii] for ii in idx]
         
         return star_systems, compMass
 
@@ -580,11 +598,21 @@ class ResolvedClusterDiffRedden(ResolvedCluster):
         return
     
 class CustomResolvedCluster(ResolvedCluster):
-    def __init__(self,star_cluster_table, iso, ifmr=None, verbose=True,
-                     seed=None):
+    def __init__(self,star_cluster_table, iso,multiplicity = 'table',
+                     ifmr=None, verbose=True, seed=None):
         self.custom_table = star_cluster_table
-        ResolvedCluster.__init__(self,iso,None,cluster_mass=star_cluster_table['systemMass'].sum()
-                                ,verbose=verbose)
+        dummy_imf = imf.IMF( multiplicity = multiplicity )
+        ResolvedCluster.__init__(self,iso,dummy_imf,
+                            cluster_mass=star_cluster_table['systemMass'].sum(),
+                            verbose=verbose)
+
+        ##Make multiples since was skipped in ResolvedCluster.__init__ due to 
+        ## imf == None
+        #compMass  =  self.custom_table['compMass']
+
+        #companions = self._make_companions_table(self.star_systems,compMass)
+        #self.companions = companions
+
         
     def _generate_cluster_members(self):
         mass = self.custom_table['mass']
@@ -592,6 +620,44 @@ class CustomResolvedCluster(ResolvedCluster):
         compMass = self.custom_table['compMass']
         sysMass = self.custom_table['systemMass']
         return mass, isMulti, compMass, sysMass
+
+    def _setup_systems_table(self):
+        ##### 
+        # Sample the IMF to build up our cluster mass.
+        #####
+        ##jpf: converted to function so it can be redefined by inherent classes
+        mass, isMulti, compMass, sysMass = self._generate_cluster_members() 
+
+        ##### 
+        # Make a table to contain all the information about each stellar system.
+        #####
+        star_systems = self._make_star_systems_table(mass, isMulti, sysMass)
+
+        #### Add custom_columns that contain binary parameters:
+        for key in self.custom_table.keys():
+            if key not in star_systems.keys():
+                star_systems.add_column( self.custom_table[key],name=key)
+
+
+        
+        # Trim out bad systems; specifically, stars with masses outside those provided
+        # by the model isochrone (except for compact objects).
+        star_systems, compMass = self._remove_bad_systems(star_systems, compMass)
+
+        ##### 
+        # Make a table to contain all the information about companions.
+        #####
+        if self.imf.make_multiples:
+            companions = self._make_companions_table(star_systems, compMass)
+            
+        #####
+        # Save our arrays to the object
+        #####
+        self.star_systems = star_systems
+        
+        if self.imf.make_multiples:
+            self.companions = companions
+        return
 
 class UnresolvedCluster(Cluster):
     """
