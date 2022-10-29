@@ -969,6 +969,47 @@ def compare_Baraffe_Pisa(BaraffeIso, PisaIso):
 
     return
 
+def test_Baraffe_iso_update(iso_old, iso_new, logAge):
+    """
+    Helper test function to compare previous Baraffe+15 iso
+    to new one
+    """
+    # Read in isochrones
+    old = Table.read(iso_new, format='fits')
+    new = Table.read(iso_old, format='fits')
+
+    # Plots: mass vs. Teff, logL, logG
+    py.figure(figsize=(30,10))
+    py.subplots_adjust(left=0.08)
+    py.subplot(131)
+    py.plot(new['Mass'], new['Teff'], 'r-', label='Update',
+                linewidth=2)
+    py.plot(old['Mass'], old['Teff'], 'k--', label='Orig',
+                linewidth=2)
+    py.xlabel('Mass (Msun)')
+    py.ylabel('Teff (K)')
+    py.yscale('log')
+    py.legend()
+    py.subplot(132)
+    py.plot(new['Mass'], new['logL'], 'r-', label='Update',
+                linewidth=2)
+    py.plot(old['Mass'], old['logL'], 'k--', label='Orig',
+                linewidth=2)
+    py.xlabel('Mass (Msun)')
+    py.ylabel('logL')
+    py.legend()
+    py.subplot(133)
+    py.plot(new['Mass'], new['logG'], 'r-', label='Update',
+                linewidth=2)
+    py.plot(old['Mass'], old['logG'], 'k--', label='Orig',
+                linewidth=2)
+    py.xlabel('Mass (Msun)')
+    py.ylabel('logG')
+    py.legend()
+    py.suptitle('logAge = {0}'.format(logAge))
+    py.savefig('update_iso_{0}.png'.format(logAge))
+    return
+
 #===============================#
 # MIST v.1 (Choi+16)
 #===============================#
