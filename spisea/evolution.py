@@ -650,7 +650,7 @@ class Baraffe15(StellarEvolution):
         self.z_list = [0.015]
         
         # populate list of isochrone ages (log scale)
-        self.age_list = np.arange(5.70, 8.0+0.005, 0.01)
+        self.age_list = np.arange(5.00, 8.0+0.005, 0.01)
         
         # Specify location of model files
         self.model_dir = models_dir+'Baraffe15/'

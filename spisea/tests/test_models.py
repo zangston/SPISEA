@@ -174,7 +174,7 @@ def test_Baraffe15_update():
     import numpy as np
     
     # Define cluster parameters
-    logAge = 5.8
+    logAge = 5.1
     AKs = 2.4
     distance = 4000
     cluster_mass = 10**5.
