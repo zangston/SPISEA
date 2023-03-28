@@ -650,7 +650,7 @@ class Baraffe15(StellarEvolution):
         self.z_list = [0.015]
         
         # populate list of isochrone ages (log scale)
-        self.age_list = np.arange(6.0, 8.0+0.005, 0.01)
+        self.age_list = np.arange(5.00, 8.0+0.005, 0.01)
         
         # Specify location of model files
         self.model_dir = models_dir+'Baraffe15/'
@@ -713,22 +713,51 @@ class Baraffe15(StellarEvolution):
 
         return iso
 
-    def tracks_to_isochrones(self, tracksFile):
+    def parse_tracks_for_python(self, download_file):
+        """
+        Take downloaded set of evolution model tracks from 
+        Baraffe+15 (http://perso.ens-lyon.fr/isabelle.baraffe/BHAC15dir/)
+        and parse file so it can be read easily by python later.
+
+        Output: tracks.dat in cwd
+        """
+        # Read downloadfile line-by-line, and reconstruct file
+        # skipping any line that starts with "!" or is blank
+        start_file = open(download_file, 'r')
+        lines = start_file.readlines()
+
+        out_file = open('tracks.dat', 'w')
+
+        for ii in lines:
+
+            if ( not ii.startswith('!')) & (not ii.startswith('\n')):
+                out_file.write(ii)
+
+        # Close open files
+        start_file.close()
+        out_file.close()
+        return
+
+    def tracks_to_isochrones(self, tracksFile, logAge_min=5.7, logAge_max=8.0, dlogAge=0.01):
         r"""
-        Create isochrones at desired age sampling (6.0 < logAge < 8.0,
-        steps of 0.01; hardcoded) from the Baraffe+15 tracks downloaded
+        Create isochrones at desired age sampling (logAge_min < logAge < logAge_max,
+        steps of dlogAge) from the Baraffe+15 tracks downloaded
         online. 
 
         tracksFile: tracks.dat file downloaded from Baraffe+15, with format
-        modified to be read in python
+        modified to be read in python (after parse_tracks_for_python)
         
         Writes isochrones in iso/ subdirectory off of work directory. Will
         create this subdirectory if it doesn't already exist
         """
         tracks = Table.read(tracksFile, format='ascii')
 
-        age_arr = np.arange(6.0, 8.0+0.005, 0.01)
+        age_arr = np.arange(logAge_min, logAge_max+(dlogAge/2.0), dlogAge)
         #age_arr = [6.28]
+
+        # Make iso sub-directory, if it doesn't already exist
+        if not os.path.exists('iso/'):
+            os.mkdir('iso')
         
         # Loop through the masses, interpolating track over time at each.
         # Resample track properties at hardcoded ages
@@ -739,6 +768,7 @@ class Baraffe15(StellarEvolution):
         Teff_interp = []
         logL_interp = []
         logG_interp = []
+        rad_interp = []
         print( 'Begin looping over masses')
         cnt=0
         for mass in masses:
@@ -751,15 +781,21 @@ class Baraffe15(StellarEvolution):
             good_logG = np.where( np.diff(tmp['col5']) != 0 )
             good_logL = np.where( np.diff(tmp['col4']) != 0 )
 
-            # Interpolate Teff, logL, and logG using linear interpolator
-            tck_Teff = interpolate.interp1d(tmp['col2'], tmp['col3'])
-            tck_logL = interpolate.interp1d(tmp['col2'], tmp['col4'])
-            tck_logG = interpolate.interp1d(tmp['col2'], tmp['col5'])            
-
+            # Interpolate Teff, logL, and logG as a function of logAge
+            # using linear interpolator
+            tck_Teff = interpolate.interp1d(tmp['col2'], tmp['col3'], kind='linear',
+                                                bounds_error=False, fill_value=np.nan)
+            tck_logL = interpolate.interp1d(tmp['col2'], tmp['col4'], kind='linear',
+                                                bounds_error=False, fill_value=np.nan)
+            tck_logG = interpolate.interp1d(tmp['col2'], tmp['col5'], kind='linear',
+                                                bounds_error=False, fill_value=np.nan)
+            tck_rad = interpolate.interp1d(tmp['col2'], tmp['col6'], kind='linear',
+                                               bounds_error=False, fill_value=np.nan)
 
             Teff = tck_Teff(age_arr)
             logL = tck_logL(age_arr)
             logG = tck_logG(age_arr)
+            rad = tck_rad(age_arr)
             
             # Test interpolation if desired
             test=False
@@ -787,6 +823,14 @@ class Baraffe15(StellarEvolution):
                 py.xlabel('logAge')
                 py.ylabel('logG')
                 py.savefig('test_logG.png')
+
+                py.figure(4, figsize=(10,10))
+                py.clf()
+                py.plot(tmp['col2'], tmp['col6'], 'k.', ms=8)
+                py.plot(age_arr, rad, 'r-', linewidth=2)
+                py.xlabel('logAge')
+                py.ylabel('R/Rsun')
+                py.savefig('test_rad.png')
                 
                 pdb.set_trace()
            
@@ -796,24 +840,26 @@ class Baraffe15(StellarEvolution):
             Teff_interp = np.concatenate((Teff_interp, Teff))
             logL_interp = np.concatenate((logL_interp, logL))
             logG_interp = np.concatenate((logG_interp, logG))
+            rad_interp = np.concatenate((rad_interp, rad))
 
             print( 'Done {0} of {1}'.format(cnt, len(masses)))
             cnt+=1
 
-        # Now, construct the iso_*.fits files for each age, write files
-        # to iso subdirectory
-        # First check to see if subdirectory exists
-        if not os.path.exists('iso/'):
-            os.mkdir('iso')
-
-        # Now for the loop
+        # Now, construct the iso_*.fits files for each age, writing files
+        # to iso subdirectory. Filter out nan values at each step
         ages = np.unique(age_interp)
         print( 'Writing iso files')
         for age in ages:
             good = np.where( age_interp == age)
 
             t = Table( (mass_interp[good], Teff_interp[good], logL_interp[good],
-                       logG_interp[good]), names=('Mass', 'Teff', 'logL', 'logG') )
+                       logG_interp[good], rad_interp[good]), names=('Mass', 'Teff', 'logL', 'logG', 'Rad') )
+
+            # Filter out any nan values
+            good = np.where( np.isfinite(t['Mass']) & np.isfinite(t['Teff']) &
+                                 np.isfinite(t['logL']) & np.isfinite(t['logG']) &
+                                 np.isfinite(t['Rad']) )
+            t = t[good]
 
             # Write out as fits table
             name = 'iso_{0:3.2f}.fits'.format(age)
@@ -921,6 +967,47 @@ def compare_Baraffe_Pisa(BaraffeIso, PisaIso):
     py.legend()
     py.savefig('BaraffePisa_comp_mass_{0}.png'.format(age))    
 
+    return
+
+def test_Baraffe_iso_update(iso_old, iso_new, logAge):
+    """
+    Helper test function to compare previous Baraffe+15 iso
+    to new one
+    """
+    # Read in isochrones
+    old = Table.read(iso_new, format='fits')
+    new = Table.read(iso_old, format='fits')
+
+    # Plots: mass vs. Teff, logL, logG
+    py.figure(figsize=(30,10))
+    py.subplots_adjust(left=0.08)
+    py.subplot(131)
+    py.plot(new['Mass'], new['Teff'], 'r-', label='Update',
+                linewidth=2)
+    py.plot(old['Mass'], old['Teff'], 'k--', label='Orig',
+                linewidth=2)
+    py.xlabel('Mass (Msun)')
+    py.ylabel('Teff (K)')
+    py.yscale('log')
+    py.legend()
+    py.subplot(132)
+    py.plot(new['Mass'], new['logL'], 'r-', label='Update',
+                linewidth=2)
+    py.plot(old['Mass'], old['logL'], 'k--', label='Orig',
+                linewidth=2)
+    py.xlabel('Mass (Msun)')
+    py.ylabel('logL')
+    py.legend()
+    py.subplot(133)
+    py.plot(new['Mass'], new['logG'], 'r-', label='Update',
+                linewidth=2)
+    py.plot(old['Mass'], old['logG'], 'k--', label='Orig',
+                linewidth=2)
+    py.xlabel('Mass (Msun)')
+    py.ylabel('logG')
+    py.legend()
+    py.suptitle('logAge = {0}'.format(logAge))
+    py.savefig('update_iso_{0}.png'.format(logAge))
     return
 
 #===============================#
