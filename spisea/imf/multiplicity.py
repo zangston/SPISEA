@@ -324,3 +324,39 @@ class MultiplicityResolvedDK(MultiplicityUnresolved):
         omega = 360*z
         
         return inclination, Omega, omega
+
+class MultiplicityResolvedTable(object):
+    """
+    When a custom table is used, that contain binary components, this class
+    is used to create the companions table.
+
+    This function should:
+        retrieve the proper binary components for a given system_idx
+
+    If using a custom table and want properties from the usual distributions,
+    then use MultiplicityResolvedDK with custom table
+
+    Input table must contain:
+    compMass : list of companion masses
+    log_a  : list of log semimajor axis
+    e : list of eccentricities
+    i : list of inclinations
+    Omega : list of Omega
+    omega : list of omegas
+    """
+    def __init__(self, systems_table):
+        self.systems_table == systems_table
+
+    def log_semimajoraxis(self,index,cindex=None):
+        if cindex is None:
+            return self.systems_table['log_a'][index] 
+        else:
+            return self.systems_table['log_a'][index][cindex]
+
+    def log_semimajoraxis(self,index,cindex=None):
+        if cindex is None:
+            return self.systems_table['log_a'][index] 
+        else:
+            return self.systems_table['log_a'][index][cindex]
+
+
