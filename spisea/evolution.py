@@ -1318,6 +1318,108 @@ class MergedBaraffePisaEkstromParsec(StellarEvolution):
         return iso
 
 
+class MergedLowMassBaraffePisaEkstromParsec(StellarEvolution):
+    """
+    This is a merged model that follows the same implementation scheme as the original merged model that
+        comes prepackaged with SPISEA, with the caveat that the Baraffe model used is a proprietary model
+        used by the Tan group that extends its mass range down to 0.01 solar masses.
+
+    * Baraffe (`Baraffe et al. 2015 <https://ui.adsabs.harvard.edu/abs/2015A%26A...577A..42B/abstract>`_)
+    * Pisa (`Tognelli et al. 2011 <https://ui.adsabs.harvard.edu/abs/2011A%26A...533A.109T/abstract>`_)
+    * Geneva (`Ekstrom et al. 2012 <https://ui.adsabs.harvard.edu/abs/2012A%26A...537A.146E/abstract>`_)
+    * Parsec (version 1.2s, `Bressan+12 <https://ui.adsabs.harvard.edu/abs/2012MNRAS.427..127B/abstract>`_)
+
+    As with the original merged model, the models used are age-dependent:
+
+    For logAge < 7.4:
+        * Baraffe: 0.01 - 0.4 M_sun
+        * Baraffe/Pisa transition: 0.4 - 0.5 M_sun 
+        * Pisa: 0.5 M_sun to the highest mass in Pisa isochrone (typically 5 - 7 Msun)
+        * Geneva: Highest mass of Pisa models to 120 M_sun
+
+    For logAge > 7.4:
+        * Parsec v1.2s: full mass range
+    
+    Parameters
+    ----------
+    rot: boolean, optional
+        If true, then use rotating Ekstrom models. Default is true.
+    """
+    def __init__(self, rot=True):
+        # populate list of model masses (in solar masses)
+        mass_list = [(0.01 + i*0.005) for i in range(199)]
+        
+        # define metallicity parameters for Geneva models
+        z_list = [0.015]
+        
+        # populate list of isochrone ages (log scale)
+        age_list = np.arange(6.0, 10.091, 0.01).tolist()
+        
+        # specify location of model files
+        model_dir = models_dir + 'merged/low_mass_baraffe_pisa_ekstrom_parsec/'
+        StellarEvolution.__init__(self, model_dir, age_list, mass_list, z_list)
+        self.z_solar = 0.015
+        
+        # Switch to specify rotating/non-rotating models
+        if rot:
+            self.z_file_map = {0.015: 'z015_rot/'}
+        else:
+            self.z_file_map = {0.015: 'z015_norot/'}
+        
+    
+    def isochrone(self, age=1.e8, metallicity=0.0):
+        r"""
+        Extract an individual isochrone from the Baraffe-Pisa-Ekstrom-Parsec 
+        collection
+        """
+        # convert metallicity to mass fraction
+        z_defined = self.z_solar*10.**metallicity
+
+        log_age = math.log10(age)
+        
+        # check age and metallicity are within bounds
+        if ((log_age < np.min(self.age_list)) or (log_age > np.max(self.age_list))):
+            logger.error('Requested age {0} is out of bounds.'.format(log_age))
+            
+        if ((z_defined < np.min(self.z_list)) or
+                (z_defined > np.max(self.z_list))):
+            logger.error('Requested metallicity {0} is out of bounds.'.format(z_defined))
+        
+        # convert age (in yrs) to log scale and find nearest value in grid
+        age_idx = searchsorted(self.age_list, log_age, side='right')
+        iso_file = 'iso_{0:.2f}.fits'.format(self.age_list[age_idx])
+        
+        # find closest metallicity value
+        z_idx = searchsorted(self.z_list, z_defined, side='left')
+        z_dir = self.z_file_map[self.z_list[z_idx]]
+
+        # generate isochrone file string
+        full_iso_file = self.model_dir + z_dir + iso_file
+
+        # return isochrone data
+        iso = Table.read(full_iso_file, format='fits')
+        iso.rename_column('col1', 'mass')
+        iso.rename_column('col2', 'logT')
+        iso.rename_column('col3', 'logL')
+        iso.rename_column('col4', 'logg')
+        iso.rename_column('col5', 'logT_WR')
+        iso.rename_column('col6', 'mass_current')
+        iso.rename_column('col7', 'phase')
+        iso.rename_column('col8', 'model_ref')
+
+        # Define "isWR" column based on phase info
+        isWR = Column([False] * len(iso), name='isWR')
+        idx_WR = np.where(iso['logT'] != iso['logT_WR'])
+        isWR[idx_WR] = True
+        iso.add_column(isWR)
+        
+        iso.meta['log_age'] = log_age
+        iso.meta['metallicity_in'] = metallicity
+        iso.meta['metallicity_act'] = np.log10(self.z_list[z_idx] / self.z_solar)
+        
+        return iso
+
+
 class MergedPisaEkstromParsec(StellarEvolution):
     """
     Same as MergedBaraffePisaEkstromParsec, but without
